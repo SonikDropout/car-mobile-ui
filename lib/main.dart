@@ -93,20 +93,31 @@ class NestedTabBar extends StatefulWidget {
 
 class _NestedTabBarState extends State<NestedTabBar>
     with TickerProviderStateMixin {
+  final fuelCellData = {
+    'voltage': 1.0,
+    'current': 1.0,
+    'hydrogen consumption': 150,
+  };
+  final batteryData = {
+    'voltage': 1.0,
+    'current': 1.0,
+    'charge': 80,
+  };
   TabController _nestedTabController;
   @override
   void initState() {
     super.initState();
     _nestedTabController = new TabController(length: 2, vsync: this);
   }
+
   @override
   void dispose() {
     super.dispose();
     _nestedTabController.dispose();
   }
+
   @override
   Widget build(BuildContext context) {
-    double screenHeight = MediaQuery.of(context).size.height;
     return Column(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: <Widget>[
@@ -123,28 +134,32 @@ class _NestedTabBarState extends State<NestedTabBar>
             Tab(
               text: "FuelCell",
             ),
-
           ],
         ),
         Container(
-          height: screenHeight * 0.70,
-          margin: EdgeInsets.only(left: 16.0, right: 16.0),
+          height: MediaQuery.of(context).size.height * 0.8,
+          margin: EdgeInsets.symmetric(horizontal: 8.0, vertical: 0),
           child: TabBarView(
             controller: _nestedTabController,
             children: <Widget>[
-              Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8.0),
-                  color: Colors.blueGrey[300],
-                ),
+              ListView.builder(
+                itemCount: batteryData.length,
+                itemBuilder: (BuildContext context, int index) {
+                  String key = batteryData.keys.elementAt(index);
+                  return ListTile(
+                      trailing: Text(batteryData[key].toString()),
+                      title: Text(key));
+                },
               ),
-              Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8.0),
-                  color: Colors.blueGrey[300],
-                ),
+              ListView.builder(
+                itemCount: batteryData.length,
+                itemBuilder: (context, index) {
+                  String key = fuelCellData.keys.elementAt(index);
+                  return ListTile(
+                      trailing: Text(fuelCellData[key].toString()),
+                      title: Text(key));
+                },
               ),
-
             ],
           ),
         )
