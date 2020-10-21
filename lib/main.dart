@@ -10,6 +10,8 @@
 // bar items. The first one is selected.](https://flutter.github.io/assets-for-api-docs/assets/material/bottom_navigation_bar.png)
 
 import 'package:flutter/material.dart';
+import 'dart:async';
+import 'dart:math';
 
 void main() => runApp(MyApp());
 
@@ -104,16 +106,28 @@ class _NestedTabBarState extends State<NestedTabBar>
     'charge': 80,
   };
   TabController _nestedTabController;
+  Random generator = Random(3);
+  Timer timer;
   @override
   void initState() {
     super.initState();
     _nestedTabController = new TabController(length: 2, vsync: this);
+    timer = Timer.periodic(Duration(seconds: 1), ((Timer timer) {
+      setState(() {
+        fuelCellData['voltage'] =
+            double.parse(generator.nextDouble().toStringAsFixed(3));
+        fuelCellData['current'] =
+            double.parse(generator.nextDouble().toStringAsFixed(3));
+        fuelCellData['hydrogen consumption'] = generator.nextInt(200);
+      });
+    }));
   }
 
   @override
   void dispose() {
     super.dispose();
     _nestedTabController.dispose();
+    timer.cancel();
   }
 
   @override
