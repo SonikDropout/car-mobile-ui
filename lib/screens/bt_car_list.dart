@@ -1,108 +1,140 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_ble_lib/flutter_ble_lib.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_blue/flutter_blue.dart';
 import './car_controller.dart';
 
-class ScannerScreen extends StatelessWidget {
-  final BleManager _bleManager = BleManager();
-
-  Future<void> _initBleManager() {
-    print("Init devices bloc");
-    return _bleManager
-        .createClient()
-        .catchError((e) => print("Couldn't create BLE client"))
-        .then((_) => _checkPermissions())
-        .catchError((e) => print("Permission check error"))
-        .then((_) => _waitForBluetoothPoweredOn());
-  }
-
-  Future<bool> _waitForBluetoothPoweredOn() async {
-    Completer<bool> completer = Completer();
-    StreamSubscription<BluetoothState> subscription;
-    subscription = _bleManager
-        .observeBluetoothState(emitCurrentValue: true)
-        .listen((bluetoothState) async {
-      if (bluetoothState == BluetoothState.POWERED_ON &&
-          !completer.isCompleted) {
-        await subscription.cancel();
-        completer.complete(true);
-        print('bluetooth powered on');
-      }
-    });
-    return completer.future;
-  }
-
-  Future<void> _checkPermissions() async {
-    if (Platform.isAndroid) {
-      var status = await Permission.location.status;
-      if (!status.isGranted) {
-        if (!(await Permission.location.request().isGranted))
-          return Future.error(Exception("Location permission not granted"));
-      }
-    }
+class CarFinderScreen extends StatelessWidget {
+  CarFinderScreen({Key key}) : super(key: key) {
+    FlutterBlue.instance.setLogLevel(LogLevel.emergency);
   }
 
   @override
-  Widget build(context) {
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      color: Colors.lightBlue,
+      home: StreamBuilder<BluetoothState>(
+          stream: FlutterBlue.instance.state,
+          initialData: BluetoothState.unknown,
+          builder: (c, snapshot) {
+            final state = snapshot.data;
+            if (state == BluetoothState.on) {
+              return FindDevicesScreen();
+            }
+            return BluetoothOffScreen(state: state);
+          }),
+    );
+  }
+}
+
+class BluetoothOffScreen extends StatelessWidget {
+  const BluetoothOffScreen({Key key, this.state}) : super(key: key);
+
+  final BluetoothState state;
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(title: Text('Searching for cars')),
-        body: FutureBuilder(
-          future: _initBleManager(),
-          builder: (context, snapshot) {
-            if (!snapshot.hasError)
-              return CarList(_bleManager);
-            else
-              return Center(child: Text('Please turn on bluetooth'));
-          },
-        ));
+      backgroundColor: Colors.lightBlue,
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(
+              Icons.bluetooth_disabled,
+              size: 200.0,
+              color: Colors.white54,
+            ),
+            Text(
+              'Bluetooth Adapter is ${state != null ? state.toString().substring(15) : 'not available'}.',
+              style: Theme.of(context)
+                  .primaryTextTheme
+                  .subtitle1
+                  .copyWith(color: Colors.white),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
-class CarList extends StatefulWidget {
-  final BleManager _bleManager;
-
-  CarList(this._bleManager);
+class FindDevicesScreen extends StatelessWidget {
   @override
-  _CarList createState() => _CarList(_bleManager);
-}
-
-class _CarList extends State<CarList> {
-  final List<ScanResult> cars = [];
-  final BleManager _bleManager;
-  StreamSubscription _carScannerSubscription;
-
-  _CarList(this._bleManager);
-
-  @override
-  void initState() {
-    super.initState();
-    _carScannerSubscription = _bleManager.startPeripheralScan(uuids: [
-      '0000ffe0-0000-1000-8000-00805f9b34fb'
-    ]).listen((ScanResult scanResult) {
-      if (!cars.contains(scanResult))
-        setState(() {
-          cars.add(scanResult);
-        });
-    });
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
-    _carScannerSubscription.cancel();
-    _bleManager.stopPeripheralScan();
-  }
-
-  @override
-  Widget build(context) {
-    return ListView.builder(
-        itemBuilder: (context, index) => ListTile(
-            title: Text(cars[index].advertisementData.localName),
-            onTap: () => Navigator.push(context,
-                MaterialPageRoute(builder: (context) => CarController()))));
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Find Devices'),
+      ),
+      body: RefreshIndicator(
+        onRefresh: () => FlutterBlue.instance.startScan(
+            withServices: [Guid('0000ffe0-0000-1000-8000-00805f9b34fb')],
+            timeout: Duration(seconds: 30)),
+        child: SingleChildScrollView(
+          physics: AlwaysScrollableScrollPhysics(),
+          child: Column(
+            children: <Widget>[
+              StreamBuilder<List<BluetoothDevice>>(
+                stream: Stream.periodic(Duration(seconds: 2))
+                    .asyncMap((_) => FlutterBlue.instance.connectedDevices),
+                initialData: [],
+                builder: (c, snapshot) => Column(
+                  children: snapshot.data
+                      .map(
+                        (d) => ListTile(
+                          title: Text(d.name),
+                          onTap: () => Navigator.of(context)
+                              .push(MaterialPageRoute(builder: (context) {
+                            d.connect();
+                            return CarController(device: d);
+                          })),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+              StreamBuilder<List<ScanResult>>(
+                stream: FlutterBlue.instance.scanResults,
+                initialData: [],
+                builder: (c, snapshot) => Column(
+                  children: snapshot.data
+                      .map(
+                        (r) => ListTile(
+                          title: Text(r.device.name),
+                          onTap: () => Navigator.of(context)
+                              .push(MaterialPageRoute(builder: (context) {
+                            r.device.connect();
+                            return CarController(device: r.device);
+                          })),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      floatingActionButton: StreamBuilder<bool>(
+        stream: FlutterBlue.instance.isScanning,
+        initialData: false,
+        builder: (c, snapshot) {
+          if (snapshot.data) {
+            return FloatingActionButton(
+              child: Icon(Icons.stop),
+              onPressed: () => FlutterBlue.instance.stopScan(),
+              backgroundColor: Colors.red,
+            );
+          } else {
+            return FloatingActionButton(
+                child: Icon(Icons.search),
+                onPressed: () => FlutterBlue.instance.startScan(withServices: [
+                      Guid('0000ffe0-0000-1000-8000-00805f9b34fb')
+                    ], timeout: Duration(seconds: 30)));
+          }
+        },
+      ),
+    );
   }
 }
